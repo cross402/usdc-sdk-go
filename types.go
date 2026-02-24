@@ -48,13 +48,9 @@ type CreateIntentResponse struct {
 	PaymentRequirements PaymentRequirements `json:"payment_requirements"`
 }
 
-// SubmitProofRequest is the body for POST /v2/intents/{intent_id}.
-type SubmitProofRequest struct {
-	SettleProof string `json:"settle_proof"`
-}
-
-// SubmitProofResponse is the response for POST /v2/intents/{intent_id} (200).
-type SubmitProofResponse struct {
+// ExecuteResponse is the response for POST /v2/intents/{intent_id}/execute (200).
+// Backend signs with the Agent wallet and transfers USDC on Base; no settle_proof required.
+type ExecuteResponse struct {
 	IntentID          string       `json:"intent_id"`
 	MerchantRecipient string       `json:"merchant_recipient"`
 	SendingAmount     string       `json:"sending_amount"`

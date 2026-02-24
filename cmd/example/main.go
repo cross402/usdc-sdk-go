@@ -1,5 +1,6 @@
 // Example shows how to use the Pay SDK: create a client, create an intent,
-// and optionally query intent status. Run from repo root:
+// execute transfer (backend uses Agent wallet; no proof needed), then optionally query intent.
+// Run from repo root:
 //
 //	PAY_BASE_URL=https://api-pay.agent.tech/api PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./cmd/example
 //
@@ -63,8 +64,19 @@ func main() {
 
 	fmt.Printf("Intent created: %s\n", resp.IntentID)
 	fmt.Printf("Status: %s\n", resp.Status)
-	fmt.Printf("Payment requirements (for X402 signing):\n")
-	b, _ := json.MarshalIndent(resp.PaymentRequirements, "", "  ")
+
+	exec, err := client.ExecuteIntent(ctx, resp.IntentID)
+	if err != nil {
+		var apiErr *pay.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode != 0 {
+			fmt.Fprintf(os.Stderr, "ExecuteIntent API error %d: %s\n", apiErr.StatusCode, apiErr.Message)
+		} else {
+			fmt.Fprintf(os.Stderr, "ExecuteIntent: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("Execute result status: %s\n", exec.Status)
+	b, _ := json.MarshalIndent(exec, "", "  ")
 	fmt.Println(string(b))
-	fmt.Printf("\nNext: submit settle_proof with SubmitProof(ctx, %q, settleProof), then poll Intent(ctx, %q).\n", resp.IntentID, resp.IntentID)
 }

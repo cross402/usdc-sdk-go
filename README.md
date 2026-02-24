@@ -1,6 +1,6 @@
 # Pay SDK (Go)
 
-Go client for the v2 payment API (API Key–authenticated, Agent-bound intents and Base chain settlement). It is a **library (SDK)** that your program imports; you create a client, then call `CreateIntent`, `SubmitProof`, and `Intent` to integrate with the API.
+Go client for the v2 payment API (API Key–authenticated, Agent-bound intents and Base chain settlement). It is a **library (SDK)** that your program imports; you create a client, then call `CreateIntent`, `ExecuteIntent`, and `Intent` to integrate with the API. No wallet or signing on your side—the backend uses the Agent wallet to transfer USDC on Base.
 
 ---
 
@@ -43,7 +43,13 @@ Go client for the v2 payment API (API Key–authenticated, Agent-bound intents a
            log.Fatal(err)
        }
        log.Printf("Intent ID: %s", resp.IntentID)
-       // Next: use resp.PaymentRequirements for X402, then SubmitProof, then Intent to poll.
+
+       exec, err := client.ExecuteIntent(ctx, resp.IntentID)
+       if err != nil {
+           log.Fatal(err)
+       }
+       log.Printf("Status: %s", exec.Status)
+       // Optional: client.Intent(ctx, resp.IntentID) for full receipt
    }
    ```
 
@@ -52,10 +58,10 @@ Go client for the v2 payment API (API Key–authenticated, Agent-bound intents a
 Clone the repo and run the example (no need to publish the module first):
 
 ```bash
-git clone https://github.com/agent-tech/agent-sdk-go
-cd agent-sdk-go
+git clone https://github.com/agent-tech/agent-sdk
+cd agent-sdk
 
-# Create an intent (replace with your API credentials)
+# Create intent and execute transfer (replace with your API credentials)
 PAY_BASE_URL=https://api-pay.agent.tech/api \
 PAY_CLIENT_ID=your-client-id \
 PAY_CLIENT_SECRET=your-client-secret \
@@ -67,17 +73,17 @@ PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_CLIENT_SECRET=... \
 go run ./cmd/example
 ```
 
-The example prints the created intent ID and `payment_requirements`, or the full intent object when `PAY_INTENT_ID` is set.
+The example creates an intent, calls execute, then prints the result (or only queries intent when `PAY_INTENT_ID` is set).
 
 ---
 
 ## API overview
 
-| Method           | What it does                          |
-|------------------|----------------------------------------|
-| `CreateIntent`   | Create a payment intent (POST /v2/intents). |
-| `SubmitProof`    | Submit X402 settle proof (POST /v2/intents/{id}). |
-| `Intent`         | Get intent status and receipt (GET /v2/intents?intent_id=...). |
+| Method         | What it does                                                |
+|----------------|-------------------------------------------------------------|
+| `CreateIntent` | Create a payment intent (POST /v2/intents).                 |
+| `ExecuteIntent`| Execute transfer on Base with Agent wallet (POST /v2/intents/{id}/execute). No body or proof. |
+| `Intent`       | Get intent status and receipt (GET /v2/intents?intent_id=...). |
 
 ### Create a client
 
@@ -108,19 +114,19 @@ if err != nil {
     }
     return err
 }
-// use resp.IntentID, resp.PaymentRequirements, etc.
+// use resp.IntentID for ExecuteIntent
 ```
 
-### Submit settle proof
+### Execute transfer
 
-After the payer completes the X402 payment and has `settle_proof`:
+No wallet or settle_proof on your side. Backend signs with the Agent wallet and transfers USDC on Base.
 
 ```go
-proofResp, err := client.SubmitProof(ctx, resp.IntentID, settleProof)
+exec, err := client.ExecuteIntent(ctx, resp.IntentID)
 if err != nil {
     return err
 }
-// proofResp.Status is typically "PENDING"; poll Intent() until BASE_SETTLED or terminal.
+// exec.Status is typically "BASE_SETTLED"
 ```
 
 ### Query intent status
@@ -144,11 +150,9 @@ default:
 
 ## Integration flow
 
-1. **Create intent** – `CreateIntent` with `email` or `recipient`, `amount`, `payer_chain`. Use `intent_id` and `payment_requirements` for the next steps.
-2. **Client signs X402** – Use `payment_requirements` off-chain to produce a signed X402 authorization (not part of this API).
-3. **Payer pays on source chain** – Payer completes payment and obtains `settle_proof`.
-4. **Submit proof** – `SubmitProof(ctx, intentID, settleProof)`. Then poll `Intent` until `status` is `BASE_SETTLED` or another terminal state.
-5. **Receipt** – Use `Intent()` response (`base_payment`, etc.) as the merchant receipt.
+1. **Create intent** – `CreateIntent` with `email` or `recipient`, `amount`, `payer_chain`. Get `intent_id`.
+2. **Execute transfer** – `ExecuteIntent(ctx, intentID)`. No body; backend uses the Agent wallet to sign and transfer USDC on Base.
+3. **Query receipt** – `Intent(ctx, intentID)` to get full status and `base_payment` as receipt.
 
 ---
 

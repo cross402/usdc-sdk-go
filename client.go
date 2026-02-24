@@ -118,16 +118,13 @@ func (c *Client) CreateIntent(ctx context.Context, req *CreateIntentRequest) (*C
 	return &out, nil
 }
 
-// SubmitProof submits the X402 settle proof for an intent (POST /v2/intents/{intent_id}).
-func (c *Client) SubmitProof(ctx context.Context, intentID, settleProof string) (*SubmitProofResponse, error) {
-	if intentID == "" || settleProof == "" {
-		return nil, &APIError{StatusCode: 0, Message: "intent_id and settle_proof are required"}
+// ExecuteIntent triggers transfer on Base using the Agent wallet (POST /v2/intents/{intent_id}/execute).
+// No body or settle_proof required; backend signs and transfers USDC to the intent recipient.
+func (c *Client) ExecuteIntent(ctx context.Context, intentID string) (*ExecuteResponse, error) {
+	if intentID == "" {
+		return nil, &APIError{StatusCode: 0, Message: "intent_id is required"}
 	}
-	body, err := json.Marshal(&SubmitProofRequest{SettleProof: settleProof})
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-	resp, err := c.do(ctx, http.MethodPost, "/intents/"+url.PathEscape(intentID), body)
+	resp, err := c.do(ctx, http.MethodPost, "/intents/"+url.PathEscape(intentID)+"/execute", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +132,7 @@ func (c *Client) SubmitProof(ctx context.Context, intentID, settleProof string) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.parseError(resp)
 	}
-	var out SubmitProofResponse
+	var out ExecuteResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
