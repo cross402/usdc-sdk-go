@@ -41,7 +41,7 @@ import (
 
 func main() {
     client, err := pay.NewClient(
-        "https://api-pay.agent.tech/api",
+        "https://api-pay.agent.tech",
         pay.WithBearerAuth("your-client-id", "your-client-secret"),
     )
     if err != nil {
@@ -82,7 +82,7 @@ Or run the bundled example:
 git clone https://github.com/agent-tech/agent-sdk-go
 cd agent-sdk-go
 
-PAY_BASE_URL=https://api-pay.agent.tech/api \
+PAY_BASE_URL=https://api-pay.agent.tech \
 PAY_CLIENT_ID=your-client-id \
 PAY_CLIENT_SECRET=your-client-secret \
 go run ./cmd/example

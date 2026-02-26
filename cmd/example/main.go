@@ -2,7 +2,7 @@
 // execute transfer (backend uses Agent wallet; no proof needed), then optionally query intent.
 // Run from repo root:
 //
-//	PAY_BASE_URL=https://api-pay.agent.tech/api PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./cmd/example
+//	PAY_BASE_URL=https://api-pay.agent.tech PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./cmd/example
 //
 // To use header-based auth instead:
 //
