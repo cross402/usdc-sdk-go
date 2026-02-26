@@ -83,7 +83,7 @@ func main() {
 	req := &pay.CreateIntentRequest{
 		Email:      email,
 		Amount:     "10.00",
-		PayerChain: "solana",
+		PayerChain: "base",
 	}
 	resp, err := client.CreateIntent(ctx, req)
 	if err != nil {

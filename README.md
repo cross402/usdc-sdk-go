@@ -53,7 +53,7 @@ func main() {
     resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
         Email:      "merchant@example.com",
         Amount:     "100.50",
-        PayerChain: "solana",
+        PayerChain: "base",
     })
     if err != nil {
         log.Fatal(err)
@@ -145,7 +145,7 @@ client, err := pay.NewClient(baseURL,
 resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
     Email:      "merchant@example.com", // or Recipient (exactly one required)
     Amount:     "100.50",               // 0.01–1,000,000 USDC, max 6 decimals
-    PayerChain: "solana",               // "solana", "base", or "bsc"
+    PayerChain: "base",               // "base"
 })
 ```
 
@@ -156,7 +156,7 @@ resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
 | `Email` | `email` | One of Email/Recipient | Recipient email address |
 | `Recipient` | `recipient` | One of Email/Recipient | Recipient wallet address |
 | `Amount` | `amount` | Yes | USDC amount as string (e.g. `"100.50"`) |
-| `PayerChain` | `payer_chain` | Yes | Source chain: `solana`, `base`, or `bsc` |
+| `PayerChain` | `payer_chain` | Yes | Source chain: `base`|
 
 ### ExecuteIntent
 
@@ -229,9 +229,8 @@ Use the status constants instead of bare strings:
 
 | Chain | Identifier | Role |
 |---|---|---|
-| Solana | `solana` | Payer chain (source) |
-| Base | `base` | Payer chain (source) **and** settlement chain (target) |
-| BNB Smart Chain | `bsc` | Payer chain (source) |
+| base | `base` | Payer chain (source) |
+
 
 All payments settle on **Base** regardless of the source chain. The `payer_chain` field in `CreateIntentRequest` specifies the source chain only.
 
