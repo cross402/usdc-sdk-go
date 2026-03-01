@@ -1,150 +1,118 @@
 package pay
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
 
 const (
-	_apiPathPrefix  = "/api"
-	_v2PathPrefix   = "/v2"
-	_defaultTimeout = 30 * time.Second
+	apiPathPrefix  = "/api"
+	v2PathPrefix   = "/v2"
+	defaultTimeout = 30 * time.Second
 )
 
-// Client calls the v2 payment API.
+// Client calls the payment API. When created with an auth option
+// (WithBearerAuth or WithAPIKeyAuth) it uses the /v2 prefix;
+// otherwise it uses the /api prefix (public mode, no auth required).
 type Client struct {
 	baseURL         string
+	pathPrefix      string
 	httpClient      *http.Client
 	authFunc        func(*http.Request)
-	hasCustomClient bool   // set by WithHTTPClient
-	optErr          error  // first error from an option
+	hasCustomClient bool
 }
 
-// NewClient creates a Client for the given baseURL (the API root without /v2).
-// At least one auth option (WithBearerAuth or WithAPIKeyAuth) must be provided.
-func NewClient(baseURL string, opts ...Option) (*Client, error) {
+type request struct {
+	method string
+	uri    string
+	header http.Header
+	body   io.Reader
+	result any
+}
+
+// NewClient creates a Client for the given baseURL (the API root without path prefix).
+// If an auth option is provided the client uses /v2; otherwise /api (public mode).
+func NewClient(baseURL string, opts ...OptFn) (*Client, error) {
 	if baseURL == "" {
-		return nil, &ValidationError{Message: "baseURL is required"}
+		return nil, &ValidationError{Message: ErrEmptyBaseURL.Error(), Err: ErrEmptyBaseURL}
 	}
+
 	c := &Client{
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
-		httpClient: &http.Client{Timeout: _defaultTimeout},
+		pathPrefix: apiPathPrefix,
+		httpClient: &http.Client{Timeout: defaultTimeout},
 	}
+
 	for _, opt := range opts {
 		opt(c)
 	}
-	if c.optErr != nil {
-		return nil, c.optErr
-	}
-	if c.authFunc == nil {
-		return nil, &ValidationError{Message: "an auth option is required (use WithBearerAuth or WithAPIKeyAuth)"}
-	}
+
 	return c, nil
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
-	u := c.baseURL + _v2PathPrefix + path
+func (c *Client) do(ctx context.Context, r *request) error {
+	fullURL := fmt.Sprintf("%s%s%s", c.baseURL, c.pathPrefix, r.uri)
 
-	var reqBody io.Reader
-	if body != nil {
-		reqBody = bytes.NewReader(body)
+	header := http.Header{}
+	if r.header != nil {
+		header = r.header.Clone()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, u, reqBody)
+	if r.body != nil {
+		header.Set("Content-Type", "application/json")
+	}
+
+	if c.authFunc != nil {
+		req := &http.Request{Header: header}
+		c.authFunc(req)
+
+		header = req.Header
+	}
+
+	req, err := http.NewRequestWithContext(ctx, r.method, fullURL, r.body)
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return &UnexpectedError{Err: err}
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	c.authFunc(req)
-	return c.httpClient.Do(req)
-}
 
-// parseAPIError decodes error response body; used by both Client and PublicClient.
-func parseAPIError(resp *http.Response) error {
-	var er ErrorResponse
-	_ = json.NewDecoder(resp.Body).Decode(&er)
-	msg := er.Message
-	if msg == "" {
-		msg = er.Error
-	}
-	if msg == "" {
-		msg = resp.Status
-	}
-	return &APIError{StatusCode: resp.StatusCode, Message: msg}
-}
+	req.Header = header
 
-// CreateIntent creates a payment intent (POST /v2/intents).
-// Exactly one of req.Email or req.Recipient must be set.
-func (c *Client) CreateIntent(ctx context.Context, req *CreateIntentRequest) (*CreateIntentResponse, error) {
-	if req == nil {
-		return nil, &ValidationError{Message: "CreateIntentRequest is nil"}
-	}
-	body, err := json.Marshal(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return &UnexpectedError{Err: err}
 	}
-	resp, err := c.do(ctx, http.MethodPost, "/intents", body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		return nil, parseAPIError(resp)
-	}
-	var out CreateIntentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	return &out, nil
-}
 
-// ExecuteIntent triggers transfer on Base using the Agent wallet (POST /v2/intents/{intent_id}/execute).
-// No body or settle_proof required; backend signs and transfers USDC to the intent recipient.
-func (c *Client) ExecuteIntent(ctx context.Context, intentID string) (*ExecuteIntentResponse, error) {
-	if intentID == "" {
-		return nil, &ValidationError{Message: "intent_id is required"}
-	}
-	resp, err := c.do(ctx, http.MethodPost, "/intents/"+url.PathEscape(intentID)+"/execute", nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, parseAPIError(resp)
-	}
-	var out ExecuteIntentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	return &out, nil
-}
+	body, err := io.ReadAll(resp.Body)
 
-// GetIntent returns intent status and receipt (GET /v2/intents?intent_id=...).
-func (c *Client) GetIntent(ctx context.Context, intentID string) (*GetIntentResponse, error) {
-	if intentID == "" {
-		return nil, &ValidationError{Message: "intent_id is required"}
-	}
-	path := "/intents?intent_id=" + url.QueryEscape(intentID)
-	resp, err := c.do(ctx, http.MethodGet, path, nil)
+	closeErr := resp.Body.Close()
+
 	if err != nil {
-		return nil, err
+		return &UnexpectedError{Err: err}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, parseAPIError(resp)
+
+	if closeErr != nil {
+		return &UnexpectedError{Err: closeErr}
 	}
-	var out GetIntentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return &RequestError{
+			StatusCode: resp.StatusCode,
+			Body:       string(body),
+		}
 	}
-	return &out, nil
+
+	if r.result == nil {
+		return nil
+	}
+
+	err = json.Unmarshal(body, r.result)
+	if err != nil {
+		return &UnexpectedError{Err: err}
+	}
+
+	return nil
 }

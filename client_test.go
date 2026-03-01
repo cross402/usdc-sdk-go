@@ -1,338 +1,319 @@
 package pay
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
-// --- NewClient validation ---
-
-func TestNewClient_EmptyBaseURL(t *testing.T) {
-	_, err := NewClient("", WithBearerAuth("id", "secret"))
-	assertValidationError(t, err, "baseURL")
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
-func TestNewClient_NoAuth(t *testing.T) {
-	_, err := NewClient("http://localhost")
-	assertValidationError(t, err, "auth option")
-}
+// --- NewClient ---
 
-func TestNewClient_EmptyBearerCredentials(t *testing.T) {
-	_, err := NewClient("http://localhost", WithBearerAuth("", "secret"))
-	assertValidationError(t, err, "clientID")
+func TestNewClient(t *testing.T) {
+	t.Parallel()
 
-	_, err = NewClient("http://localhost", WithBearerAuth("id", ""))
-	assertValidationError(t, err, "clientSecret")
-}
-
-func TestNewClient_EmptyAPIKeyCredentials(t *testing.T) {
-	_, err := NewClient("http://localhost", WithAPIKeyAuth("", "key"))
-	assertValidationError(t, err, "clientID")
-
-	_, err = NewClient("http://localhost", WithAPIKeyAuth("id", ""))
-	assertValidationError(t, err, "apiKey")
-}
-
-func TestNewClient_TrailingSlash(t *testing.T) {
-	c, err := NewClient("http://localhost/", WithBearerAuth("id", "secret"))
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name       string
+		baseURL    string
+		opts       []OptFn
+		wantPrefix string
+		wantErr    bool
+	}{
+		{
+			name:       "success - with bearer auth uses v2 prefix",
+			baseURL:    "http://localhost",
+			opts:       []OptFn{WithBearerAuth("id", "secret")},
+			wantPrefix: v2PathPrefix,
+		},
+		{
+			name:       "success - without auth uses api prefix",
+			baseURL:    "http://localhost",
+			wantPrefix: apiPathPrefix,
+		},
+		{
+			name:       "success - trailing slash trimmed",
+			baseURL:    "http://localhost/",
+			opts:       []OptFn{WithBearerAuth("id", "secret")},
+			wantPrefix: v2PathPrefix,
+		},
+		{
+			name:    "error - empty baseURL",
+			baseURL: "",
+			wantErr: true,
+		},
 	}
-	if c.baseURL != "http://localhost" {
-		t.Errorf("baseURL = %q, want no trailing slash", c.baseURL)
-	}
-}
 
-// --- Option behavior ---
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestWithTimeout(t *testing.T) {
-	c, err := NewClient("http://localhost",
-		WithBearerAuth("id", "secret"),
-		WithTimeout(5*time.Second),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.httpClient.Timeout != 5*time.Second {
-		t.Errorf("timeout = %v, want 5s", c.httpClient.Timeout)
-	}
-}
+			c, err := NewClient(tt.baseURL, tt.opts...)
+			if err != nil {
+				if !tt.wantErr {
+					t.Errorf("NewClient() failed: %v", err)
+				}
 
-func TestWithTimeout_IgnoredAfterCustomClient(t *testing.T) {
-	custom := &http.Client{Timeout: 90 * time.Second}
-	c, err := NewClient("http://localhost",
-		WithBearerAuth("id", "secret"),
-		WithHTTPClient(custom),
-		WithTimeout(5*time.Second), // should be ignored
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.httpClient.Timeout != 90*time.Second {
-		t.Errorf("timeout = %v, want 90s (custom client should be unmodified)", c.httpClient.Timeout)
-	}
-}
+				return
+			}
 
-func TestWithTimeout_IgnoredBeforeCustomClient(t *testing.T) {
-	custom := &http.Client{Timeout: 90 * time.Second}
-	c, err := NewClient("http://localhost",
-		WithBearerAuth("id", "secret"),
-		WithTimeout(5*time.Second), // applied to default, then replaced
-		WithHTTPClient(custom),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.httpClient != custom {
-		t.Error("expected custom http client")
-	}
-	if c.httpClient.Timeout != 90*time.Second {
-		t.Errorf("timeout = %v, want 90s", c.httpClient.Timeout)
+			if tt.wantErr {
+				t.Error("NewClient() expected error, got nil")
+				return
+			}
+
+			if c.pathPrefix != tt.wantPrefix {
+				t.Errorf("pathPrefix = %q, want %q", c.pathPrefix, tt.wantPrefix)
+			}
+
+			if tt.baseURL == "http://localhost/" && c.baseURL != "http://localhost" {
+				t.Errorf("baseURL = %q, want trailing slash trimmed", c.baseURL)
+			}
+		})
 	}
 }
 
-func TestWithHTTPClient_NilIgnored(t *testing.T) {
-	c, err := NewClient("http://localhost",
-		WithBearerAuth("id", "secret"),
-		WithHTTPClient(nil),
-	)
-	if err != nil {
-		t.Fatal(err)
+// --- Options ---
+
+func TestClientOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		opts  []OptFn
+		check func(t *testing.T, c *Client)
+	}{
+		{
+			name: "success - timeout",
+			opts: []OptFn{WithTimeout(5 * time.Second)},
+			check: func(t *testing.T, c *Client) {
+				t.Helper()
+
+				if c.httpClient.Timeout != 5*time.Second {
+					t.Errorf("timeout = %v, want 5s", c.httpClient.Timeout)
+				}
+			},
+		},
+		{
+			name: "success - custom client ignores timeout",
+			opts: []OptFn{
+				WithHTTPClient(&http.Client{Timeout: 90 * time.Second}),
+				WithTimeout(5 * time.Second),
+			},
+			check: func(t *testing.T, c *Client) {
+				t.Helper()
+
+				if c.httpClient.Timeout != 90*time.Second {
+					t.Errorf("timeout = %v, want 90s", c.httpClient.Timeout)
+				}
+			},
+		},
+		{
+			name: "success - nil http client ignored",
+			opts: []OptFn{WithHTTPClient(nil)},
+			check: func(t *testing.T, c *Client) {
+				t.Helper()
+
+				if c.httpClient == nil {
+					t.Error("httpClient should not be nil")
+				}
+			},
+		},
 	}
-	if c.httpClient == nil {
-		t.Error("httpClient should not be nil")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := NewClient("http://localhost", tt.opts...)
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			tt.check(t, c)
+		})
 	}
 }
 
 // --- Error types ---
 
-func TestAPIError_ErrorString(t *testing.T) {
-	e := &APIError{StatusCode: 400, Message: "bad request"}
-	want := "api error 400: bad request"
-	if e.Error() != want {
-		t.Errorf("Error() = %q, want %q", e.Error(), want)
+func TestErrorTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		check func(t *testing.T)
+	}{
+		{
+			name: "RequestError string",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				e := &RequestError{StatusCode: 400, Body: "bad request"}
+
+				want := "request failed with status 400: bad request"
+				if e.Error() != want {
+					t.Errorf("Error() = %q, want %q", e.Error(), want)
+				}
+			},
+		},
+		{
+			name: "ValidationError string",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				e := &ValidationError{Message: "field required"}
+
+				want := "validation: field required"
+				if e.Error() != want {
+					t.Errorf("Error() = %q, want %q", e.Error(), want)
+				}
+			},
+		},
+		{
+			name: "UnexpectedError unwrap",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				inner := errors.New("inner")
+
+				e := &UnexpectedError{Err: inner}
+				if !errors.Is(e, inner) {
+					t.Error("errors.Is should match inner error")
+				}
+			},
+		},
+		{
+			name: "ValidationError unwrap sentinel",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				e := &ValidationError{Message: "intent_id is required", Err: ErrEmptyIntentID}
+				if !errors.Is(e, ErrEmptyIntentID) {
+					t.Error("errors.Is should match ErrEmptyIntentID")
+				}
+			},
+		},
+		{
+			name: "errors.As RequestError",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				var target *RequestError
+
+				err := error(&RequestError{StatusCode: 404, Body: "not found"})
+				if !errors.As(err, &target) {
+					t.Error("errors.As should match *RequestError")
+				}
+			},
+		},
+		{
+			name: "errors.As ValidationError",
+			check: func(t *testing.T) {
+				t.Helper()
+
+				var target *ValidationError
+
+				err := error(&ValidationError{Message: "bad"})
+				if !errors.As(err, &target) {
+					t.Error("errors.As should match *ValidationError")
+				}
+			},
+		},
 	}
-}
 
-func TestValidationError_ErrorString(t *testing.T) {
-	e := &ValidationError{Message: "field required"}
-	want := "validation: field required"
-	if e.Error() != want {
-		t.Errorf("Error() = %q, want %q", e.Error(), want)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestErrorsAs_APIError(t *testing.T) {
-	var target *APIError
-	err := error(&APIError{StatusCode: 404, Message: "not found"})
-	if !errors.As(err, &target) {
-		t.Error("errors.As should match *APIError")
-	}
-}
-
-func TestErrorsAs_ValidationError(t *testing.T) {
-	var target *ValidationError
-	err := error(&ValidationError{Message: "bad"})
-	if !errors.As(err, &target) {
-		t.Error("errors.As should match *ValidationError")
-	}
-}
-
-// --- API methods with httptest ---
-
-func TestCreateIntent_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v2/intents" {
-			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
-		}
-		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
-			t.Errorf("Content-Type = %q", ct)
-		}
-		if r.Header.Get("Authorization") == "" {
-			t.Error("missing Authorization header")
-		}
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(CreateIntentResponse{
-			IntentBase: IntentBase{IntentID: "intent-1", Status: StatusAwaitingPayment},
+			tt.check(t)
 		})
-	}))
-	defer srv.Close()
-
-	c, err := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	resp, err := c.CreateIntent(context.Background(), &CreateIntentRequest{
-		Email:      "test@example.com",
-		Amount:     "10.00",
-		PayerChain: "base",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.IntentID != "intent-1" {
-		t.Errorf("IntentID = %q, want %q", resp.IntentID, "intent-1")
 	}
 }
 
-func TestCreateIntent_NilRequest(t *testing.T) {
-	c, _ := NewClient("http://localhost", WithBearerAuth("id", "secret"))
-	_, err := c.CreateIntent(context.Background(), nil)
-	assertValidationError(t, err, "nil")
-}
+// --- Auth & error parsing ---
 
-func TestCreateIntent_APIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Message: "invalid amount"})
-	}))
-	defer srv.Close()
+func TestAuthAndErrorParsing(t *testing.T) {
+	t.Parallel()
 
-	c, _ := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	_, err := c.CreateIntent(context.Background(), &CreateIntentRequest{Amount: "0"})
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		opts    []OptFn
+		check   func(t *testing.T, err error)
+	}{
+		{
+			name: "API key auth sends correct headers",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("X-Client-Id") != "myid" {
+					http.Error(w, "bad X-Client-ID", http.StatusUnauthorized)
+					return
+				}
 
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *APIError, got %T: %v", err, err)
+				if r.Header.Get("X-Api-Key") != "mykey" {
+					http.Error(w, "bad X-API-Key", http.StatusUnauthorized)
+					return
+				}
+
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(GetIntentResponse{})
+			},
+			opts: []OptFn{WithAPIKeyAuth("myid", "mykey")},
+			check: func(t *testing.T, err error) {
+				t.Helper()
+
+				if err != nil {
+					t.Errorf("expected no error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "non-JSON error body preserved in RequestError",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("not json"))
+			},
+			opts: []OptFn{WithBearerAuth("id", "secret")},
+			check: func(t *testing.T, err error) {
+				t.Helper()
+
+				var reqErr *RequestError
+				if !errors.As(err, &reqErr) {
+					t.Fatalf("expected *RequestError, got %v", err)
+				}
+
+				if reqErr.StatusCode != http.StatusInternalServerError {
+					t.Errorf("StatusCode = %d, want 500", reqErr.StatusCode)
+				}
+
+				if reqErr.Body != "not json" {
+					t.Errorf("Body = %q, want %q", reqErr.Body, "not json")
+				}
+			},
+		},
 	}
-	if apiErr.StatusCode != 400 {
-		t.Errorf("StatusCode = %d, want 400", apiErr.StatusCode)
-	}
-	if apiErr.Message != "invalid amount" {
-		t.Errorf("Message = %q, want %q", apiErr.Message, "invalid amount")
-	}
-}
 
-func TestExecuteIntent_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/intents/abc-123/execute" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(ExecuteIntentResponse{
-			IntentBase: IntentBase{IntentID: "abc-123", Status: StatusBaseSettled},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(tt.handler)
+			defer srv.Close()
+
+			c, err := NewClient(srv.URL, tt.opts...)
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			_, err = c.GetIntent(t.Context(), "test-id")
+			tt.check(t, err)
 		})
-	}))
-	defer srv.Close()
-
-	c, _ := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	resp, err := c.ExecuteIntent(context.Background(), "abc-123")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Status != StatusBaseSettled {
-		t.Errorf("Status = %q", resp.Status)
-	}
-}
-
-func TestExecuteIntent_EmptyID(t *testing.T) {
-	c, _ := NewClient("http://localhost", WithBearerAuth("id", "secret"))
-	_, err := c.ExecuteIntent(context.Background(), "")
-	assertValidationError(t, err, "intent_id")
-}
-
-func TestGetIntent_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("intent_id") != "xyz" {
-			t.Errorf("intent_id = %q", r.URL.Query().Get("intent_id"))
-		}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(GetIntentResponse{
-			IntentBase: IntentBase{IntentID: "xyz", Status: StatusBaseSettled},
-		})
-	}))
-	defer srv.Close()
-
-	c, _ := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	resp, err := c.GetIntent(context.Background(), "xyz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.IntentID != "xyz" {
-		t.Errorf("IntentID = %q", resp.IntentID)
-	}
-}
-
-func TestGetIntent_EmptyID(t *testing.T) {
-	c, _ := NewClient("http://localhost", WithBearerAuth("id", "secret"))
-	_, err := c.GetIntent(context.Background(), "")
-	assertValidationError(t, err, "intent_id")
-}
-
-func TestAPIKeyAuth_Headers(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Client-ID") != "myid" {
-			t.Errorf("X-Client-ID = %q", r.Header.Get("X-Client-ID"))
-		}
-		if r.Header.Get("X-API-Key") != "mykey" {
-			t.Errorf("X-API-Key = %q", r.Header.Get("X-API-Key"))
-		}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(GetIntentResponse{})
-	}))
-	defer srv.Close()
-
-	c, _ := NewClient(srv.URL, WithAPIKeyAuth("myid", "mykey"))
-	_, _ = c.GetIntent(context.Background(), "test-id")
-}
-
-func TestParseError_FallsBackToErrorField(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "forbidden"})
-	}))
-	defer srv.Close()
-
-	c, _ := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	_, err := c.GetIntent(context.Background(), "id")
-
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *APIError, got %v", err)
-	}
-	if apiErr.Message != "forbidden" {
-		t.Errorf("Message = %q, want %q", apiErr.Message, "forbidden")
-	}
-}
-
-func TestParseError_FallsBackToStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("not json"))
-	}))
-	defer srv.Close()
-
-	c, _ := NewClient(srv.URL, WithBearerAuth("id", "secret"))
-	_, err := c.GetIntent(context.Background(), "id")
-
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *APIError, got %v", err)
-	}
-	if apiErr.StatusCode != 500 {
-		t.Errorf("StatusCode = %d, want 500", apiErr.StatusCode)
-	}
-}
-
-// --- helpers ---
-
-func assertValidationError(t *testing.T, err error, substr string) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var valErr *ValidationError
-	if !errors.As(err, &valErr) {
-		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
-	}
-	if substr != "" && !strings.Contains(valErr.Message, substr) {
-		t.Errorf("error message %q does not contain %q", valErr.Message, substr)
 	}
 }

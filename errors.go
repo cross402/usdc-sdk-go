@@ -1,22 +1,46 @@
 package pay
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
-// APIError represents an error response from the v2 payment API (4xx/5xx).
-// StatusCode is the HTTP status; Message is the human-readable body message.
-type APIError struct {
-	StatusCode int
-	Message    string
+var (
+	ErrEmptyBaseURL     = errors.New("baseURL is required")
+	ErrEmptyIntentID    = errors.New("intent_id is required")
+	ErrEmptySettleProof = errors.New("settle_proof is required")
+	ErrMissingAuth      = errors.New("auth option required")
+)
+
+// UnexpectedError wraps unexpected errors (marshal, request creation).
+type UnexpectedError struct {
+	Err error
 }
 
-func (e *APIError) Error() string {
-	return fmt.Sprintf("api error %d: %s", e.StatusCode, e.Message)
+func (e *UnexpectedError) Error() string {
+	return fmt.Sprintf("unexpected error: %v", e.Err)
+}
+
+func (e *UnexpectedError) Unwrap() error { return e.Err }
+
+// RequestError represents an HTTP 4xx/5xx error response from the API.
+type RequestError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *RequestError) Error() string {
+	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, e.Body)
 }
 
 // ValidationError is returned when the SDK rejects a request before
-// it reaches the API (e.g. nil request, empty intent ID).
+// it reaches the API (e.g. empty intent ID). Wraps a sentinel error
+// so callers can use both errors.As and errors.Is.
 type ValidationError struct {
 	Message string
+	Err     error
 }
 
 func (e *ValidationError) Error() string { return "validation: " + e.Message }
+
+func (e *ValidationError) Unwrap() error { return e.Err }

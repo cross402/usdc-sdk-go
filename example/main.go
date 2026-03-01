@@ -2,17 +2,17 @@
 // execute transfer (backend uses Agent wallet; no proof needed), then optionally query intent.
 // Run from repo root:
 //
-//	PAY_BASE_URL=https://api-pay.agent.tech PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./cmd/example
+//	PAY_BASE_URL=https://api-pay.agent.tech PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./example
 //
 // To use header-based auth instead:
 //
-//	PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_API_KEY=key go run ./cmd/example
+//	PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_API_KEY=key go run ./example
 //
 // Set PAY_EMAIL to override the default merchant email (merchant@example.com).
 //
 // To only query an existing intent:
 //
-//	PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_CLIENT_SECRET=... PAY_INTENT_ID=uuid go run ./cmd/example
+//	PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_CLIENT_SECRET=... PAY_INTENT_ID=uuid go run ./example
 package main
 
 import (
@@ -22,8 +22,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/agent-tech/agent-sdk-go"
+	pay "github.com/agent-tech/agent-sdk-go"
 )
+
+const defaultTimeout = 30 * time.Second
 
 func fatal(msg string, err error) {
 	fmt.Fprintf(os.Stderr, "%s: %v\n", msg, err)
@@ -48,31 +50,34 @@ func main() {
 	}
 
 	// Choose auth mode based on which env var is set.
-	var auth pay.Option
+	var opts []pay.OptFn
+
 	switch {
 	case apiKey != "":
-		auth = pay.WithAPIKeyAuth(clientID, apiKey)
+		opts = append(opts, pay.WithAPIKeyAuth(clientID, apiKey))
 	case clientSecret != "":
-		auth = pay.WithBearerAuth(clientID, clientSecret)
+		opts = append(opts, pay.WithBearerAuth(clientID, clientSecret))
 	default:
 		fmt.Fprintln(os.Stderr, "Provide PAY_CLIENT_SECRET or PAY_API_KEY.")
 		os.Exit(1)
 	}
 
-	client, err := pay.NewClient(baseURL, auth)
+	client, err := pay.NewClient(baseURL, opts...)
 	if err != nil {
 		fatal("NewClient", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	if intentID != "" {
-		intent, err := client.GetIntent(ctx, intentID)
-		if err != nil {
-			fatal("GetIntent", err)
+		intent, getErr := client.GetIntent(ctx, intentID)
+		if getErr != nil {
+			fatal("GetIntent", getErr)
 		}
+
 		printJSON(intent)
+
 		return
 	}
 
@@ -80,11 +85,13 @@ func main() {
 	if email == "" {
 		email = "merchant@example.com"
 	}
+
 	req := &pay.CreateIntentRequest{
 		Email:      email,
 		Amount:     "10.00",
 		PayerChain: "base",
 	}
+
 	resp, err := client.CreateIntent(ctx, req)
 	if err != nil {
 		fatal("CreateIntent", err)
