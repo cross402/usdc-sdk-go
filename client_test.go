@@ -1,7 +1,6 @@
 package pay
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -249,31 +248,6 @@ func TestAuthAndErrorParsing(t *testing.T) {
 		opts    []OptFn
 		check   func(t *testing.T, err error)
 	}{
-		{
-			name: "API key auth sends correct headers",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("X-Client-Id") != "myid" {
-					http.Error(w, "bad X-Client-ID", http.StatusUnauthorized)
-					return
-				}
-
-				if r.Header.Get("X-Api-Key") != "mykey" {
-					http.Error(w, "bad X-API-Key", http.StatusUnauthorized)
-					return
-				}
-
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(GetIntentResponse{})
-			},
-			opts: []OptFn{WithAPIKeyAuth("myid", "mykey")},
-			check: func(t *testing.T, err error) {
-				t.Helper()
-
-				if err != nil {
-					t.Errorf("expected no error, got %v", err)
-				}
-			},
-		},
 		{
 			name: "non-JSON error body preserved in RequestError",
 			handler: func(w http.ResponseWriter, _ *http.Request) {

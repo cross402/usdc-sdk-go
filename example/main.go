@@ -1,12 +1,10 @@
-// Example shows how to use the Pay SDK: create a client, create an intent,
-// execute transfer (backend uses Agent wallet; no proof needed), then optionally query intent.
+// Example shows how to use the Pay SDK (Client / v2 API flow): create a client,
+// create an intent, execute transfer (backend uses Agent wallet; no proof needed),
+// then optionally query intent. For the public API flow (CreateIntent → SubmitProof),
+// use pay.NewPublicClient and see README.
 // Run from repo root:
 //
 //	PAY_BASE_URL=https://api-pay.agent.tech PAY_CLIENT_ID=id PAY_CLIENT_SECRET=secret go run ./example
-//
-// To use header-based auth instead:
-//
-//	PAY_BASE_URL=... PAY_CLIENT_ID=... PAY_API_KEY=key go run ./example
 //
 // Set PAY_EMAIL to override the default merchant email (merchant@example.com).
 //
@@ -41,26 +39,14 @@ func main() {
 	baseURL := os.Getenv("PAY_BASE_URL")
 	clientID := os.Getenv("PAY_CLIENT_ID")
 	clientSecret := os.Getenv("PAY_CLIENT_SECRET")
-	apiKey := os.Getenv("PAY_API_KEY")
 	intentID := os.Getenv("PAY_INTENT_ID")
 
-	if baseURL == "" || clientID == "" {
-		fmt.Fprintln(os.Stderr, "Set PAY_BASE_URL, PAY_CLIENT_ID, and one of PAY_CLIENT_SECRET or PAY_API_KEY.")
+	if baseURL == "" || clientID == "" || clientSecret == "" {
+		fmt.Fprintln(os.Stderr, "Set PAY_BASE_URL, PAY_CLIENT_ID, and PAY_CLIENT_SECRET.")
 		os.Exit(1)
 	}
 
-	// Choose auth mode based on which env var is set.
-	var opts []pay.OptFn
-
-	switch {
-	case apiKey != "":
-		opts = append(opts, pay.WithAPIKeyAuth(clientID, apiKey))
-	case clientSecret != "":
-		opts = append(opts, pay.WithBearerAuth(clientID, clientSecret))
-	default:
-		fmt.Fprintln(os.Stderr, "Provide PAY_CLIENT_SECRET or PAY_API_KEY.")
-		os.Exit(1)
-	}
+	opts := []pay.OptFn{pay.WithBearerAuth(clientID, clientSecret)}
 
 	client, err := pay.NewClient(baseURL, opts...)
 	if err != nil {

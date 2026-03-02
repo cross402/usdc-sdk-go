@@ -6,7 +6,7 @@
 Go client for the Agent Tech payment API — create intents, execute USDC transfers on Base, and query status.
 
 - **One unified client** — a single `Client` that auto-selects the API prefix based on auth:
-  - With auth (`WithBearerAuth` / `WithAPIKeyAuth`) → `/v2` prefix — create intent → execute (backend signs with Agent wallet)
+  - With auth (`WithBearerAuth`) → `/v2` prefix — create intent → execute (backend signs with Agent wallet)
   - Without auth → `/api` prefix (public mode) — create intent → payer signs X402 & pays → submit settle_proof
 - **Zero dependencies** beyond the Go standard library
 - **All payments settle on Base** chain
@@ -116,7 +116,7 @@ Set `PAY_INTENT_ID` to skip creation and query an existing intent instead.
 
 | | Authenticated (`/v2`) | Public (`/api`) |
 |---|---|---|
-| **Auth** | `WithBearerAuth` or `WithAPIKeyAuth` | None |
+| **Auth** | `WithBearerAuth` | None |
 | **Flow** | CreateIntent → ExecuteIntent → GetIntent | CreateIntent → (payer pays) → SubmitProof → GetIntent |
 | **Use when** | Integrator has no wallet; backend Agent signs | Integrator has payer's wallet; can sign X402 and submit settle_proof |
 
@@ -130,14 +130,6 @@ Base64-encodes `clientID:clientSecret` and sends it as `Authorization: Bearer <t
 
 ```go
 client, err := pay.NewClient(baseURL, pay.WithBearerAuth("client-id", "client-secret"))
-```
-
-### Header-based API key
-
-Sends `X-Client-ID` and `X-API-Key` headers.
-
-```go
-client, err := pay.NewClient(baseURL, pay.WithAPIKeyAuth("client-id", "api-key"))
 ```
 
 ### Custom HTTP client

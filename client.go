@@ -16,9 +16,8 @@ const (
 	defaultTimeout = 30 * time.Second
 )
 
-// Client calls the payment API. When created with an auth option
-// (WithBearerAuth or WithAPIKeyAuth) it uses the /v2 prefix;
-// otherwise it uses the /api prefix (public mode, no auth required).
+// Client calls the payment API. When created with WithBearerAuth it uses the
+// /v2 prefix; otherwise it uses the /api prefix (public mode, no auth required).
 type Client struct {
 	baseURL         string
 	pathPrefix      string

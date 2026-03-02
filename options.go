@@ -26,23 +26,6 @@ func WithBearerAuth(clientID, clientSecret string) OptFn {
 	}
 }
 
-// WithAPIKeyAuth sets header-based authentication using X-Client-ID and
-// X-API-Key headers.
-func WithAPIKeyAuth(clientID, apiKey string) OptFn {
-	return func(c *Client) {
-		if clientID == "" || apiKey == "" {
-			return
-		}
-
-		c.authFunc = func(req *http.Request) {
-			req.Header.Set("X-Client-Id", clientID)
-			req.Header.Set("X-Api-Key", apiKey)
-		}
-
-		c.pathPrefix = v2PathPrefix
-	}
-}
-
 // WithHTTPClient replaces the default HTTP client.
 // When set, WithTimeout has no effect regardless of option ordering.
 func WithHTTPClient(hc *http.Client) OptFn {
