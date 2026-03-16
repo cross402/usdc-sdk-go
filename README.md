@@ -181,7 +181,7 @@ resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
 | `Email` | `email` | One of Email/Recipient | Recipient email address |
 | `Recipient` | `recipient` | One of Email/Recipient | Recipient wallet address |
 | `Amount` | `amount` | Yes | USDC amount as string (e.g. `"100.50"`) |
-| `PayerChain` | `payer_chain` | Yes | Source chain: `base`|
+| `PayerChain` | `payer_chain` | Yes | Source chain (see [Supported Chains](#supported-chains)) |
 
 ### ExecuteIntent
 
@@ -260,12 +260,27 @@ Use the status constants instead of bare strings:
 
 ## Supported Chains
 
-| Chain | Identifier | Role |
-|---|---|---|
-| base | `base` | Payer chain (source) |
-| solana | `solana` | Payer chain (source, public mode only) |
+All payments settle on **Base** regardless of the source chain. The `payer_chain` field in `CreateIntentRequest` specifies the source chain.
 
-All payments settle on **Base** regardless of the source chain. The `payer_chain` field in `CreateIntentRequest` specifies the source chain. Public mode supports `solana` and `base`; authenticated mode typically uses `base`.
+Use the `Chain*` constants instead of bare strings:
+
+| Chain | Testnet Constant | Mainnet Constant |
+|---|---|---|
+| Solana | `pay.ChainSolanaDevnet` (`"solana-devnet"`) | `pay.ChainSolanaMainnet` (`"solana-mainnet-beta"`) |
+| Base | `pay.ChainBaseSepolia` (`"base-sepolia"`) | `pay.ChainBase` (`"base"`) |
+| BSC | `pay.ChainBSCTestnet` (`"bsc-testnet"`) | `pay.ChainBSC` (`"bsc"`) |
+| Polygon | `pay.ChainPolygonAmoy` (`"polygon-amoy"`) | `pay.ChainPolygon` (`"polygon"`) |
+| Arbitrum | `pay.ChainArbitrumSepolia` (`"arbitrum-sepolia"`) | `pay.ChainArbitrum` (`"arbitrum"`) |
+| Ethereum | `pay.ChainEthereumSepolia` (`"ethereum-sepolia"`) | `pay.ChainEthereum` (`"ethereum"`) |
+| Monad | `pay.ChainMonadTestnet` (`"monad-testnet"`) | `pay.ChainMonad` (`"monad"`) |
+
+```go
+resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
+    Email:      "merchant@example.com",
+    Amount:     "100.50",
+    PayerChain: pay.ChainBase, // use constants instead of bare strings
+})
+```
 
 ## Fee Breakdown
 
