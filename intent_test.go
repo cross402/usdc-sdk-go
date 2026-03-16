@@ -85,6 +85,13 @@ func TestCreateIntent(t *testing.T) {
 			},
 		},
 		{
+			name:    "error - nil request",
+			handler: func(w http.ResponseWriter, _ *http.Request) {},
+			opts:    []OptFn{WithBearerAuth("id", "secret")},
+			req:     nil,
+			wantErr: true,
+		},
+		{
 			name: "error - API error",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)

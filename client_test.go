@@ -48,6 +48,12 @@ func TestNewClient(t *testing.T) {
 			baseURL: "",
 			wantErr: true,
 		},
+		{
+			name:    "error - empty credentials",
+			baseURL: "http://localhost",
+			opts:    []OptFn{WithBearerAuth("", "secret")},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

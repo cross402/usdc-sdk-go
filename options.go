@@ -14,6 +14,7 @@ type OptFn func(*Client)
 func WithBearerAuth(apiKey, secretKey string) OptFn {
 	return func(c *Client) {
 		if apiKey == "" || secretKey == "" {
+			c.optErr = &ValidationError{Message: ErrMissingAuth.Error(), Err: ErrMissingAuth}
 			return
 		}
 

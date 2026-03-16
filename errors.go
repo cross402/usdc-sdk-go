@@ -6,10 +6,11 @@ import (
 )
 
 var (
-	ErrEmptyBaseURL     = errors.New("baseURL is required")
-	ErrEmptyIntentID    = errors.New("intent_id is required")
-	ErrEmptySettleProof = errors.New("settle_proof is required")
-	ErrMissingAuth      = errors.New("auth option required")
+	ErrEmptyBaseURL      = errors.New("baseURL is required")
+	ErrEmptyIntentID     = errors.New("intent_id is required")
+	ErrEmptySettleProof  = errors.New("settle_proof is required")
+	ErrMissingAuth       = errors.New("auth option required")
+	ErrNilParams         = errors.New("params must not be nil")
 )
 
 // UnexpectedError wraps unexpected errors (marshal, request creation).

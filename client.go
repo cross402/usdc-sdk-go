@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	apiPathPrefix  = "/api"
-	v2PathPrefix   = "/v2"
-	defaultTimeout = 30 * time.Second
+	apiPathPrefix   = "/api"
+	v2PathPrefix    = "/v2"
+	defaultTimeout  = 30 * time.Second
+	maxResponseSize = 10 << 20 // 10 MiB
 )
 
 // Client calls the payment API. When created with WithBearerAuth it uses the
@@ -24,14 +25,16 @@ type Client struct {
 	httpClient      *http.Client
 	authFunc        func(*http.Request)
 	hasCustomClient bool
+	optErr          error
 }
 
 type request struct {
-	method string
-	uri    string
-	header http.Header
-	body   io.Reader
-	result any
+	method      string
+	uri         string
+	header      http.Header
+	body        io.Reader
+	result      any
+	absoluteURI bool
 }
 
 // NewClient creates a Client for the given baseURL (the API root without path prefix).
@@ -51,11 +54,20 @@ func NewClient(baseURL string, opts ...OptFn) (*Client, error) {
 		opt(c)
 	}
 
+	if c.optErr != nil {
+		return nil, c.optErr
+	}
+
 	return c, nil
 }
 
 func (c *Client) do(ctx context.Context, r *request) error {
-	fullURL := fmt.Sprintf("%s%s%s", c.baseURL, c.pathPrefix, r.uri)
+	var fullURL string
+	if r.absoluteURI {
+		fullURL = fmt.Sprintf("%s%s", c.baseURL, r.uri)
+	} else {
+		fullURL = fmt.Sprintf("%s%s%s", c.baseURL, c.pathPrefix, r.uri)
+	}
 
 	header := http.Header{}
 	if r.header != nil {
@@ -85,7 +97,7 @@ func (c *Client) do(ctx context.Context, r *request) error {
 		return &UnexpectedError{Err: err}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 
 	closeErr := resp.Body.Close()
 

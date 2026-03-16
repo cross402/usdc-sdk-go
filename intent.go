@@ -17,6 +17,7 @@ const (
 	StatusBaseSettling       = "BASE_SETTLING"
 	StatusBaseSettled        = "BASE_SETTLED"
 	StatusExpired            = "EXPIRED"
+	StatusPartialSettlement  = "PARTIAL_SETTLEMENT"
 )
 
 // CreateIntentRequest is the body for POST /intents.
@@ -111,6 +112,10 @@ type GetIntentResponse struct {
 // CreateIntent creates a payment intent (POST {prefix}/intents).
 // Exactly one of req.Email or req.Recipient must be set.
 func (c *Client) CreateIntent(ctx context.Context, req *CreateIntentRequest) (*CreateIntentResponse, error) {
+	if req == nil {
+		return nil, &ValidationError{Message: ErrNilParams.Error(), Err: ErrNilParams}
+	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, &UnexpectedError{Err: err}
