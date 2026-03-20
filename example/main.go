@@ -1,7 +1,7 @@
 // Example shows how to use the Pay SDK (Client / v2 API flow): create a client,
 // create an intent, execute transfer (backend uses Agent wallet; no proof needed),
 // then optionally query intent. For the public API flow (CreateIntent → SubmitProof),
-// use pay.NewPublicClient and see README.
+// create a Client without auth options and see README.
 // Run from repo root:
 //
 //	PAY_BASE_URL=https://api-pay.agent.tech PAY_API_KEY=key PAY_SECRET_KEY=secret go run ./example

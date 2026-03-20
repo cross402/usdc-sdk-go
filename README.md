@@ -256,6 +256,7 @@ Use the status constants instead of bare strings:
 | `pay.StatusSourceSettled` | `SOURCE_SETTLED` | Source chain payment confirmed |
 | `pay.StatusBaseSettling` | `BASE_SETTLING` | USDC transfer on Base in progress |
 | `pay.StatusBaseSettled` | `BASE_SETTLED` | Transfer complete — check `base_payment` for receipt (terminal) |
+| `pay.StatusPartialSettlement` | `PARTIAL_SETTLEMENT` | Partial settlement occurred |
 | `pay.StatusExpired` | `EXPIRED` | Intent was not executed within 10 minutes (terminal) |
 
 ## Supported Chains
@@ -350,6 +351,7 @@ if errors.Is(err, pay.ErrEmptyIntentID) {
 | `ErrEmptyIntentID` | `intentID` was empty |
 | `ErrEmptySettleProof` | `settleProof` was empty in `SubmitProof` |
 | `ErrMissingAuth` | `ExecuteIntent` called without auth |
+| `ErrNilParams` | `CreateIntentRequest` was nil |
 
 ### HTTP status codes
 
