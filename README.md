@@ -274,6 +274,7 @@ Use the `Chain*` constants instead of bare strings:
 | Arbitrum | `pay.ChainArbitrumSepolia` (`"arbitrum-sepolia"`) | `pay.ChainArbitrum` (`"arbitrum"`) |
 | Ethereum | `pay.ChainEthereumSepolia` (`"ethereum-sepolia"`) | `pay.ChainEthereum` (`"ethereum"`) |
 | Monad | `pay.ChainMonadTestnet` (`"monad-testnet"`) | `pay.ChainMonad` (`"monad"`) |
+| HyperEVM | `pay.ChainHyperEVMTestnet` (`"hyperevm-testnet"`) | `pay.ChainHyperEVM` (`"hyperevm"`) |
 
 ```go
 resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
@@ -298,7 +299,7 @@ The `FeeBreakdown` struct is returned in all intent response types (embedded via
 | `TotalFee` | `total_fee` | Sum of all fees |
 
 **Amount rules:**
-- Minimum: **0.01 USDC**
+- Minimum: **0.02 USDC**
 - Maximum: **1,000,000 USDC**
 - Up to **6 decimal places** (e.g. `"0.000001"`, `"123.45"`)
 

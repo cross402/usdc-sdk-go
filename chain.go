@@ -9,6 +9,7 @@ const (
 	ChainArbitrumSepolia = "arbitrum-sepolia"
 	ChainEthereumSepolia = "ethereum-sepolia"
 	ChainMonadTestnet    = "monad-testnet"
+	ChainHyperEVMTestnet = "hyperevm-testnet"
 )
 
 // Supported payer chain identifiers (mainnets).
@@ -20,4 +21,5 @@ const (
 	ChainArbitrum      = "arbitrum"
 	ChainEthereum      = "ethereum"
 	ChainMonad         = "monad"
+	ChainHyperEVM      = "hyperevm"
 )
