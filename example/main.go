@@ -20,7 +20,7 @@ import (
 	"os"
 	"time"
 
-	pay "github.com/agent-tech/agent-sdk-go"
+	pay "github.com/cross402/agent-sdk-go"
 )
 
 const defaultTimeout = 30 * time.Second

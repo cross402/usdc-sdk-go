@@ -1,6 +1,6 @@
 # Pay SDK (Go)
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/agent-tech/agent-sdk-go.svg)](https://pkg.go.dev/github.com/agent-tech/agent-sdk-go)
+[![Go Reference](https://pkg.go.dev/badge/github.com/cross402/agent-sdk-go.svg)](https://pkg.go.dev/github.com/cross402/agent-sdk-go)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue)
 
 Go client for the Agent Tech payment API — create intents, execute USDC transfers on Base, and query status.
@@ -27,7 +27,7 @@ Go client for the Agent Tech payment API — create intents, execute USDC transf
 ## Install
 
 ```bash
-go get github.com/agent-tech/agent-sdk-go
+go get github.com/cross402/agent-sdk-go
 ```
 
 ## Quick Start
@@ -41,7 +41,7 @@ import (
     "context"
     "log"
 
-    "github.com/agent-tech/agent-sdk-go"
+    "github.com/cross402/agent-sdk-go"
 )
 
 func main() {
@@ -101,7 +101,7 @@ proof, err := client.SubmitProof(ctx, resp.IntentID, settleProof)
 Or run the bundled example:
 
 ```bash
-git clone https://github.com/agent-tech/agent-sdk-go
+git clone https://github.com/cross402/agent-sdk-go
 cd agent-sdk-go
 
 PAY_BASE_URL=https://api-pay.agent.tech \
