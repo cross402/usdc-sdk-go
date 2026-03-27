@@ -1,4 +1,4 @@
-module github.com/cross402/agent-sdk-go
+module github.com/cross402/usdc-sdk-go
 
 go 1.26
 

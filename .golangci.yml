@@ -36,7 +36,7 @@ formatters:
       # with the given prefixes are grouped after 3rd-party packages.
       # Default: []
       local-prefixes:
-        - github.com/cross402/agent-sdk-go
+        - github.com/cross402/usdc-sdk-go
 
     gci:
       # Section configuration to compare against.
@@ -56,7 +56,7 @@ formatters:
     gofumpt:
       # Module path which contains the source code being formatted.
       # Default: ""
-      module-path: "github.com/cross402/agent-sdk-go"
+      module-path: "github.com/cross402/usdc-sdk-go"
       # Choose whether to use the extra rules.
       # Default: false
       # extra-rules: true
