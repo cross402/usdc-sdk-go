@@ -3,13 +3,13 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/cross402/usdc-sdk-go.svg)](https://pkg.go.dev/github.com/cross402/usdc-sdk-go)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue)
 
-Go client for the Agent Tech payment API — create intents, execute USDC transfers on Base, and query status.
+Go client for the Agent Tech payment API — create intents, execute USDC transfers across chains, and query status.
 
 - **One unified client** — a single `Client` that auto-selects the API prefix based on auth:
   - With auth (`WithBearerAuth`) → `/v2` prefix — create intent → execute (backend signs with Agent wallet)
   - Without auth → `/api` prefix (public mode) — create intent → payer signs X402 & pays → submit settle_proof
 - **Zero dependencies** beyond the Go standard library
-- **All payments settle on Base** chain
+- **Multichain to multichain** — pick any supported `payer_chain` and any supported `target_chain` (defaults to `base` when omitted)
 
 ## Table of Contents
 
@@ -54,16 +54,17 @@ func main() {
     }
     ctx := context.Background()
 
-    // 1. Create intent
+    // 1. Create intent (multichain: pay from Base, settle on Solana)
     resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
-        Email:      "merchant@example.com",
-        Amount:     "100.50",
-        PayerChain: "base",
+        Email:       "merchant@example.com",
+        Amount:      "100.50",
+        PayerChain:  pay.ChainBase,
+        TargetChain: pay.ChainSolanaMainnet, // omit to default to "base"
     })
     if err != nil {
         log.Fatal(err)
     }
-    log.Printf("Intent ID: %s", resp.IntentID)
+    log.Printf("Intent ID: %s (settling on %s)", resp.IntentID, resp.TargetChain)
 
     // 2. Execute transfer (backend signs with Agent wallet)
     exec, err := client.ExecuteIntent(ctx, resp.IntentID)
@@ -159,18 +160,30 @@ client, err := pay.NewClient(baseURL,
 
 | Method | Auth Required | Endpoint | Description |
 |---|---|---|---|
+| `GetSupportedChains` | No | `GET /api/chains` | List payer and target chains the backend currently accepts |
 | `CreateIntent` | No | `POST {prefix}/intents` | Create a payment intent |
-| `ExecuteIntent` | Yes | `POST /v2/intents/{id}/execute` | Execute transfer on Base with Agent wallet |
+| `ExecuteIntent` | Yes | `POST /v2/intents/{id}/execute` | Execute transfer with the Agent wallet (settles on the chosen target chain) |
 | `SubmitProof` | No | `POST {prefix}/intents/{id}` | Submit settle_proof after payer completes X402 payment |
 | `GetIntent` | No | `GET {prefix}/intents?intent_id=...` | Get intent status and receipt |
+
+### GetSupportedChains
+
+```go
+chains, err := client.GetSupportedChains(ctx)
+// chains.Chains       — chains valid as PayerChain
+// chains.TargetChains — chains valid as TargetChain
+```
+
+This endpoint is public-only on the backend; the SDK always hits `/api/chains` even when the client is configured with auth.
 
 ### CreateIntent
 
 ```go
 resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
-    Email:      "merchant@example.com", // or Recipient (exactly one required)
-    Amount:     "100.50",               // 0.01–1,000,000 USDC, max 6 decimals
-    PayerChain: "base",               // "base"
+    Email:       "merchant@example.com",   // or Recipient (exactly one required)
+    Amount:      "100.50",                 // 0.02–1,000,000 USDC, max 6 decimals
+    PayerChain:  pay.ChainBase,            // source chain
+    TargetChain: pay.ChainSolanaMainnet,   // optional — omit to settle on "base"
 })
 ```
 
@@ -182,14 +195,15 @@ resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
 | `Recipient` | `recipient` | One of Email/Recipient | Recipient wallet address |
 | `Amount` | `amount` | Yes | USDC amount as string (e.g. `"100.50"`) |
 | `PayerChain` | `payer_chain` | Yes | Source chain (see [Supported Chains](#supported-chains)) |
+| `TargetChain` | `target_chain` | No | Settlement chain. Omit to default to `"base"`. Validate against `GetSupportedChains().TargetChains`. |
 
 ### ExecuteIntent
 
-No request body — the backend uses the Agent wallet to sign and transfer USDC on Base. Requires auth.
+No request body — the backend uses the Agent wallet to sign the source-chain transfer and settle on the chosen target chain. Requires auth.
 
 ```go
 exec, err := client.ExecuteIntent(ctx, resp.IntentID)
-// exec.Status is typically "BASE_SETTLED"
+// exec.Status is typically StatusTargetSettled
 ```
 
 ### SubmitProof
@@ -205,8 +219,8 @@ proof, err := client.SubmitProof(ctx, intentID, settleProof)
 ```go
 intent, err := client.GetIntent(ctx, intentID)
 switch intent.Status {
-case pay.StatusBaseSettled:
-    // use intent.BasePayment for receipt
+case pay.StatusTargetSettled:
+    // use intent.TargetPayment for receipt; intent.TargetChain names the chain
 case pay.StatusExpired, pay.StatusVerificationFailed:
     // terminal failure
 default:
@@ -236,14 +250,14 @@ Intents expire **10 minutes** after creation.
                         └───────┬────────┘
                                 │
                                 ▼
-                        ┌───────────────┐
-                        │ BASE_SETTLING │
-                        └───────┬───────┘
+                       ┌─────────────────┐
+                       │ TARGET_SETTLING │
+                       └────────┬────────┘
                                 │
                                 ▼
-                        ┌──────────────┐
-                        │ BASE_SETTLED │
-                        └──────────────┘
+                        ┌────────────────┐
+                        │ TARGET_SETTLED │
+                        └────────────────┘
 ```
 
 Use the status constants instead of bare strings:
@@ -254,14 +268,20 @@ Use the status constants instead of bare strings:
 | `pay.StatusPending` | `PENDING` | Execution initiated, processing |
 | `pay.StatusVerificationFailed` | `VERIFICATION_FAILED` | Source payment verification failed (terminal) |
 | `pay.StatusSourceSettled` | `SOURCE_SETTLED` | Source chain payment confirmed |
-| `pay.StatusBaseSettling` | `BASE_SETTLING` | USDC transfer on Base in progress |
-| `pay.StatusBaseSettled` | `BASE_SETTLED` | Transfer complete — check `base_payment` for receipt (terminal) |
-| `pay.StatusPartialSettlement` | `PARTIAL_SETTLEMENT` | Partial settlement occurred |
+| `pay.StatusTargetSettling` | `TARGET_SETTLING` | USDC transfer on the target chain in progress |
+| `pay.StatusTargetSettled` | `TARGET_SETTLED` | Transfer complete — check `target_payment` for receipt (terminal) |
+| `pay.StatusPartialSettlement` | `PARTIAL_SETTLEMENT` | Source settled but target failed — manual reconciliation required |
 | `pay.StatusExpired` | `EXPIRED` | Intent was not executed within 10 minutes (terminal) |
 
 ## Supported Chains
 
-All payments settle on **Base** regardless of the source chain. The `payer_chain` field in `CreateIntentRequest` specifies the source chain.
+The set of payer and target chains is configured at runtime by the backend. Call `GetSupportedChains` to discover what's currently enabled — the two lists are independent (a chain can be a valid payer without being a valid settlement destination, and vice versa).
+
+```go
+chains, err := client.GetSupportedChains(ctx)
+// chains.Chains       — valid as PayerChain
+// chains.TargetChains — valid as TargetChain (omitted defaults to "base")
+```
 
 Use the `Chain*` constants instead of bare strings:
 
@@ -275,12 +295,17 @@ Use the `Chain*` constants instead of bare strings:
 | Ethereum | `pay.ChainEthereumSepolia` (`"ethereum-sepolia"`) | `pay.ChainEthereum` (`"ethereum"`) |
 | Monad | `pay.ChainMonadTestnet` (`"monad-testnet"`) | `pay.ChainMonad` (`"monad"`) |
 | HyperEVM | `pay.ChainHyperEVMTestnet` (`"hyperevm-testnet"`) | `pay.ChainHyperEVM` (`"hyperevm"`) |
+| SKALE Base | — | `pay.ChainSKALEBase` (`"skale-base"`, payer-only) |
+| MegaETH | — | `pay.ChainMegaETH` (`"megaeth"`, payer-only) |
+
+`ChainSKALEBase` and `ChainMegaETH` are accepted only as `PayerChain`; the backend rejects them as `TargetChain`.
 
 ```go
 resp, err := client.CreateIntent(ctx, &pay.CreateIntentRequest{
-    Email:      "merchant@example.com",
-    Amount:     "100.50",
-    PayerChain: pay.ChainBase, // use constants instead of bare strings
+    Email:       "merchant@example.com",
+    Amount:      "100.50",
+    PayerChain:  pay.ChainBase,           // use constants instead of bare strings
+    TargetChain: pay.ChainSolanaMainnet,  // optional — omit to settle on "base"
 })
 ```
 
@@ -292,8 +317,8 @@ The `FeeBreakdown` struct is returned in all intent response types (embedded via
 |---|---|---|
 | `SourceChain` | `source_chain` | Source chain identifier |
 | `SourceChainFee` | `source_chain_fee` | Gas/network fee on the source chain |
-| `TargetChain` | `target_chain` | Target chain (always `"base"`) |
-| `TargetChainFee` | `target_chain_fee` | Gas/network fee on Base |
+| `TargetChain` | `target_chain` | Settlement chain identifier |
+| `TargetChainFee` | `target_chain_fee` | Gas/network fee on the target chain |
 | `PlatformFee` | `platform_fee` | Platform service fee |
 | `PlatformFeePercentage` | `platform_fee_percentage` | Platform fee as a percentage |
 | `TotalFee` | `total_fee` | Sum of all fees |

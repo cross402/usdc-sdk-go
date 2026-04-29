@@ -1,8 +1,10 @@
 package pay
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,8 +72,9 @@ func TestCreateIntent(t *testing.T) {
 
 				w.WriteHeader(http.StatusCreated)
 				json.NewEncoder(w).Encode(CreateIntentResponse{
-					IntentBase: IntentBase{IntentID: "intent-public-1", Status: StatusAwaitingPayment},
-					PayerChain: "solana",
+					IntentBase:  IntentBase{IntentID: "intent-public-1", Status: StatusAwaitingPayment},
+					PayerChain:  "solana",
+					TargetChain: "base",
 				})
 			},
 			req: &CreateIntentRequest{
@@ -80,8 +83,38 @@ func TestCreateIntent(t *testing.T) {
 				PayerChain: "solana",
 			},
 			want: &CreateIntentResponse{
-				IntentBase: IntentBase{IntentID: "intent-public-1", Status: StatusAwaitingPayment},
-				PayerChain: "solana",
+				IntentBase:  IntentBase{IntentID: "intent-public-1", Status: StatusAwaitingPayment},
+				PayerChain:  "solana",
+				TargetChain: "base",
+			},
+		},
+		{
+			name:    "success - explicit target chain serialized",
+			handler: handleCreateIntentExplicitTarget,
+			req: &CreateIntentRequest{
+				Email:       "test@example.com",
+				Amount:      "10.00",
+				PayerChain:  "base",
+				TargetChain: "solana",
+			},
+			want: &CreateIntentResponse{
+				IntentBase:  IntentBase{IntentID: "intent-mc-1", Status: StatusAwaitingPayment},
+				PayerChain:  "base",
+				TargetChain: "solana",
+			},
+		},
+		{
+			name:    "success - empty target chain omitted from wire",
+			handler: handleCreateIntentOmitTarget,
+			req: &CreateIntentRequest{
+				Email:      "test@example.com",
+				Amount:     "10.00",
+				PayerChain: "base",
+			},
+			want: &CreateIntentResponse{
+				IntentBase:  IntentBase{IntentID: "intent-default-tc", Status: StatusAwaitingPayment},
+				PayerChain:  "base",
+				TargetChain: "base",
 			},
 		},
 		{
@@ -166,13 +199,13 @@ func TestExecuteIntent(t *testing.T) {
 
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(ExecuteIntentResponse{
-					IntentBase: IntentBase{IntentID: "abc-123", Status: StatusBaseSettled},
+					IntentBase: IntentBase{IntentID: "abc-123", Status: StatusTargetSettled},
 				})
 			},
 			opts:     []OptFn{WithBearerAuth("id", "secret")},
 			intentID: "abc-123",
 			want: &ExecuteIntentResponse{
-				IntentBase: IntentBase{IntentID: "abc-123", Status: StatusBaseSettled},
+				IntentBase: IntentBase{IntentID: "abc-123", Status: StatusTargetSettled},
 			},
 		},
 		{
@@ -257,13 +290,49 @@ func TestGetIntent(t *testing.T) {
 
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(GetIntentResponse{
-					IntentBase: IntentBase{IntentID: "xyz", Status: StatusBaseSettled},
+					IntentBase: IntentBase{IntentID: "xyz", Status: StatusTargetSettled},
 				})
 			},
 			opts:     []OptFn{WithBearerAuth("id", "secret")},
 			intentID: "xyz",
 			want: &GetIntentResponse{
-				IntentBase: IntentBase{IntentID: "xyz", Status: StatusBaseSettled},
+				IntentBase: IntentBase{IntentID: "xyz", Status: StatusTargetSettled},
+			},
+		},
+		{
+			name: "success - multichain settlement decodes target_chain and target_payment",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{
+					"intent_id": "mc-1",
+					"status": "TARGET_SETTLED",
+					"payer_chain": "base",
+					"target_chain": "solana",
+					"merchant_recipient": "merchant@example.com",
+					"target_payment": {
+						"tx_hash": "tx-hash-123",
+						"settle_proof": "proof-456",
+						"settled_at": "2026-04-30T12:00:00Z",
+						"explorer_url": "https://solscan.io/tx/tx-hash-123"
+					}
+				}`))
+			},
+			opts:     []OptFn{WithBearerAuth("id", "secret")},
+			intentID: "mc-1",
+			want: &GetIntentResponse{
+				IntentBase: IntentBase{
+					IntentID:          "mc-1",
+					MerchantRecipient: "merchant@example.com",
+					Status:            StatusTargetSettled,
+				},
+				PayerChain:  "base",
+				TargetChain: "solana",
+				TargetPayment: &TargetPayment{
+					TxHash:      "tx-hash-123",
+					SettleProof: "proof-456",
+					SettledAt:   "2026-04-30T12:00:00Z",
+					ExplorerURL: "https://solscan.io/tx/tx-hash-123",
+				},
 			},
 		},
 		{
@@ -318,4 +387,46 @@ func TestGetIntent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func handleCreateIntentExplicitTarget(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+
+	if body["target_chain"] != "solana" {
+		http.Error(w, "missing or wrong target_chain", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(CreateIntentResponse{
+		IntentBase:  IntentBase{IntentID: "intent-mc-1", Status: StatusAwaitingPayment},
+		PayerChain:  "base",
+		TargetChain: "solana",
+	})
+}
+
+func handleCreateIntentOmitTarget(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+
+	if bytes.Contains(raw, []byte("target_chain")) {
+		http.Error(w, "target_chain should be omitted when empty", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(CreateIntentResponse{
+		IntentBase:  IntentBase{IntentID: "intent-default-tc", Status: StatusAwaitingPayment},
+		PayerChain:  "base",
+		TargetChain: "base",
+	})
 }

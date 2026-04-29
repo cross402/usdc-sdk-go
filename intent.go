@@ -14,8 +14,8 @@ const (
 	StatusPending            = "PENDING"
 	StatusVerificationFailed = "VERIFICATION_FAILED"
 	StatusSourceSettled      = "SOURCE_SETTLED"
-	StatusBaseSettling       = "BASE_SETTLING"
-	StatusBaseSettled        = "BASE_SETTLED"
+	StatusTargetSettling     = "TARGET_SETTLING"
+	StatusTargetSettled      = "TARGET_SETTLED"
 	StatusExpired            = "EXPIRED"
 	StatusPartialSettlement  = "PARTIAL_SETTLEMENT"
 )
@@ -27,6 +27,9 @@ type CreateIntentRequest struct {
 	Recipient  string `json:"recipient,omitempty"`
 	Amount     string `json:"amount"`
 	PayerChain string `json:"payer_chain"`
+	// TargetChain is the settlement destination. Optional; defaults to "base"
+	// when empty. See GetSupportedChains for valid values.
+	TargetChain string `json:"target_chain,omitempty"`
 }
 
 // FeeBreakdown holds fee details from the API.
@@ -71,6 +74,7 @@ type CreateIntentResponse struct {
 	Email               string               `json:"email,omitempty"`
 	SourceRecipient     string               `json:"source_recipient,omitempty"`
 	PayerChain          string               `json:"payer_chain"`
+	TargetChain         string               `json:"target_chain"`
 	PaymentRequirements *PaymentRequirements `json:"payment_requirements"`
 }
 
@@ -88,8 +92,8 @@ type SourcePayment struct {
 	ExplorerURL string `json:"explorer_url"`
 }
 
-// BasePayment holds Base-chain payment details from GetIntent.
-type BasePayment struct {
+// TargetPayment holds target-chain settlement details from GetIntent.
+type TargetPayment struct {
 	TxHash      string `json:"tx_hash"`
 	SettleProof string `json:"settle_proof"`
 	SettledAt   string `json:"settled_at"`
@@ -101,12 +105,13 @@ type GetIntentResponse struct {
 	IntentBase
 
 	PayerChain    string         `json:"payer_chain"`
+	TargetChain   string         `json:"target_chain"`
 	ReceiverEmail string         `json:"receiver_email,omitempty"`
 	PayerWallet   string         `json:"payer_wallet,omitempty"`
 	ErrorMessage  string         `json:"error_message,omitempty"`
 	CompletedAt   string         `json:"completed_at,omitempty"`
 	SourcePayment *SourcePayment `json:"source_payment,omitempty"`
-	BasePayment   *BasePayment   `json:"base_payment,omitempty"`
+	TargetPayment *TargetPayment `json:"target_payment,omitempty"`
 }
 
 // CreateIntent creates a payment intent (POST {prefix}/intents).

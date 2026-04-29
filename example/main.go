@@ -1,12 +1,15 @@
-// Example shows how to use the Pay SDK (Client / v2 API flow): create a client,
-// create an intent, execute transfer (backend uses Agent wallet; no proof needed),
-// then optionally query intent. For the public API flow (CreateIntent → SubmitProof),
-// create a Client without auth options and see README.
+// Example shows how to use the Pay SDK (Client / v2 API flow): list supported
+// chains, create an intent (with an optional target chain for multichain
+// settlement), execute transfer (backend uses Agent wallet; no proof needed),
+// then optionally query intent. For the public API flow (CreateIntent →
+// SubmitProof), create a Client without auth options and see README.
 // Run from repo root:
 //
 //	PAY_BASE_URL=https://api-pay.agent.tech PAY_API_KEY=key PAY_SECRET_KEY=secret go run ./example
 //
 // Set PAY_EMAIL to override the default merchant email (merchant@example.com).
+// Set PAY_PAYER_CHAIN (default "base") and PAY_TARGET_CHAIN (default "" → backend
+// settles on "base") to drive multichain-to-multichain payments.
 //
 // To only query an existing intent:
 //
@@ -67,15 +70,29 @@ func main() {
 		return
 	}
 
+	chains, err := client.GetSupportedChains(ctx)
+	if err != nil {
+		fatal("GetSupportedChains", err)
+	}
+
+	fmt.Printf("Payer chains:  %v\n", chains.Chains)
+	fmt.Printf("Target chains: %v\n", chains.TargetChains)
+
 	email := os.Getenv("PAY_EMAIL")
 	if email == "" {
 		email = "merchant@example.com"
 	}
 
+	payerChain := os.Getenv("PAY_PAYER_CHAIN")
+	if payerChain == "" {
+		payerChain = pay.ChainBase
+	}
+
 	req := &pay.CreateIntentRequest{
-		Email:      email,
-		Amount:     "10.00",
-		PayerChain: "base",
+		Email:       email,
+		Amount:      "10.00",
+		PayerChain:  payerChain,
+		TargetChain: os.Getenv("PAY_TARGET_CHAIN"), // empty → backend defaults to "base"
 	}
 
 	resp, err := client.CreateIntent(ctx, req)
@@ -83,7 +100,7 @@ func main() {
 		fatal("CreateIntent", err)
 	}
 
-	fmt.Printf("Intent created: %s\n", resp.IntentID)
+	fmt.Printf("Intent created: %s (payer=%s, target=%s)\n", resp.IntentID, resp.PayerChain, resp.TargetChain)
 	fmt.Printf("Status: %s\n", resp.Status)
 
 	exec, err := client.ExecuteIntent(ctx, resp.IntentID)
@@ -92,5 +109,10 @@ func main() {
 	}
 
 	fmt.Printf("Execute result status: %s\n", exec.Status)
+
+	if exec.Status == pay.StatusTargetSettled {
+		fmt.Println("Settlement complete on target chain.")
+	}
+
 	printJSON(exec)
 }

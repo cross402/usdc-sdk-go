@@ -23,3 +23,11 @@ const (
 	ChainMonad         = "monad"
 	ChainHyperEVM      = "hyperevm"
 )
+
+// Payer-only chain identifiers. The backend accepts these as PayerChain on
+// CreateIntentRequest but rejects them as TargetChain. Use GetSupportedChains
+// to discover valid target chains at runtime.
+const (
+	ChainSKALEBase = "skale-base"
+	ChainMegaETH   = "megaeth"
+)
