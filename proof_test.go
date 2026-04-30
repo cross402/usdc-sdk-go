@@ -116,3 +116,17 @@ func TestSubmitProof(t *testing.T) {
 		})
 	}
 }
+
+func TestSubmitProof_RejectsV2Client(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewClient("http://localhost", WithBearerAuth("id", "secret"))
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	_, err = c.SubmitProof(t.Context(), "intent-1", "proof")
+	if !errors.Is(err, ErrSubmitProofNotAllowed) {
+		t.Errorf("expected ErrSubmitProofNotAllowed, got %v", err)
+	}
+}

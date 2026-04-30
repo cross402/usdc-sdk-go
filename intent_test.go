@@ -119,7 +119,7 @@ func TestCreateIntent(t *testing.T) {
 		},
 		{
 			name:    "error - nil request",
-			handler: func(w http.ResponseWriter, _ *http.Request) {},
+			handler: func(_ http.ResponseWriter, _ *http.Request) {},
 			opts:    []OptFn{WithBearerAuth("id", "secret")},
 			req:     nil,
 			wantErr: true,
@@ -429,4 +429,136 @@ func handleCreateIntentOmitTarget(w http.ResponseWriter, r *http.Request) {
 		PayerChain:  "base",
 		TargetChain: "base",
 	})
+}
+
+func TestListIntents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		handler  http.HandlerFunc
+		opts     []OptFn
+		page     int
+		pageSize int
+		want     *ListIntentsResponse
+		wantErr  bool
+		errIs    error
+	}{
+		{
+			name: "success - explicit pagination",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v2/intents/list" {
+					http.Error(w, "bad route", http.StatusNotFound)
+					return
+				}
+
+				if r.URL.Query().Get("page") != "2" || r.URL.Query().Get("page_size") != "5" {
+					http.Error(w, "bad query", http.StatusBadRequest)
+					return
+				}
+
+				if r.Header.Get("Authorization") == "" {
+					http.Error(w, "missing auth", http.StatusUnauthorized)
+					return
+				}
+
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(ListIntentsResponse{
+					Intents: []IntentSummary{
+						{
+							IntentBase:  IntentBase{IntentID: "i-1", Status: StatusTargetSettled, AgentID: "agent-1"},
+							PayerChain:  "base",
+							TargetChain: "solana",
+						},
+					},
+					Total:    1,
+					Page:     2,
+					PageSize: 5,
+				})
+			},
+			opts:     []OptFn{WithBearerAuth("id", "secret")},
+			page:     2,
+			pageSize: 5,
+			want: &ListIntentsResponse{
+				Intents: []IntentSummary{
+					{
+						IntentBase:  IntentBase{IntentID: "i-1", Status: StatusTargetSettled, AgentID: "agent-1"},
+						PayerChain:  "base",
+						TargetChain: "solana",
+					},
+				},
+				Total:    1,
+				Page:     2,
+				PageSize: 5,
+			},
+		},
+		{
+			name: "success - server defaults when zero",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.RawQuery != "" {
+					http.Error(w, "expected no query string", http.StatusBadRequest)
+					return
+				}
+
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(ListIntentsResponse{Intents: []IntentSummary{}, Page: 1, PageSize: 20})
+			},
+			opts: []OptFn{WithBearerAuth("id", "secret")},
+			want: &ListIntentsResponse{Intents: []IntentSummary{}, Page: 1, PageSize: 20},
+		},
+		{
+			name:    "error - no auth",
+			wantErr: true,
+			errIs:   ErrMissingAuth,
+		},
+		{
+			name:     "error - invalid pagination",
+			opts:     []OptFn{WithBearerAuth("id", "secret")},
+			pageSize: 200,
+			wantErr:  true,
+			errIs:    ErrInvalidPagination,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			baseURL := "http://localhost"
+
+			if tt.handler != nil {
+				srv := httptest.NewServer(tt.handler)
+				defer srv.Close()
+
+				baseURL = srv.URL
+			}
+
+			c, err := NewClient(baseURL, tt.opts...)
+			if err != nil {
+				t.Fatalf("NewClient() failed: %v", err)
+			}
+
+			got, err := c.ListIntents(t.Context(), tt.page, tt.pageSize)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("ListIntents() expected error, got nil")
+				}
+
+				if tt.errIs != nil && !errors.Is(err, tt.errIs) {
+					t.Errorf("expected %v, got %v", tt.errIs, err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ListIntents() failed: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("ListIntents() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

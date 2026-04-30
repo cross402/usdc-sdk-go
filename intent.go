@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 // Intent status constants returned by the API.
@@ -65,6 +66,9 @@ type IntentBase struct {
 	Status            string        `json:"status"`
 	CreatedAt         string        `json:"created_at"`
 	ExpiresAt         string        `json:"expires_at"`
+	// AgentID is the owning agent's UUID. Populated only on v2 intents
+	// (created via WithBearerAuth); empty for /api intents.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 // CreateIntentResponse is the response for POST /intents (201).
@@ -157,6 +161,64 @@ func (c *Client) ExecuteIntent(ctx context.Context, intentID string) (*ExecuteIn
 	err := c.do(ctx, &request{
 		method: http.MethodPost,
 		uri:    "/intents/" + url.PathEscape(intentID) + "/execute",
+		result: &out,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// IntentSummary is a list-row entry returned by ListIntents.
+type IntentSummary struct {
+	IntentBase
+
+	PayerChain  string `json:"payer_chain"`
+	TargetChain string `json:"target_chain"`
+}
+
+// ListIntentsResponse is the response for GET /v2/intents/list.
+type ListIntentsResponse struct {
+	Intents  []IntentSummary `json:"intents"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"page_size"`
+}
+
+// ListIntents lists intents owned by the authenticated agent
+// (GET /v2/intents/list?page=&page_size=). Requires auth.
+//
+// page is 1-indexed; pageSize must be in [1,100]. Pass page=0 / pageSize=0
+// to use the server defaults (page 1, 20 per page).
+func (c *Client) ListIntents(ctx context.Context, page, pageSize int) (*ListIntentsResponse, error) {
+	if c.authFunc == nil {
+		return nil, &ValidationError{Message: ErrMissingAuth.Error(), Err: ErrMissingAuth}
+	}
+
+	if page < 0 || pageSize < 0 || pageSize > 100 {
+		return nil, &ValidationError{Message: ErrInvalidPagination.Error(), Err: ErrInvalidPagination}
+	}
+
+	q := url.Values{}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+
+	if pageSize > 0 {
+		q.Set("page_size", strconv.Itoa(pageSize))
+	}
+
+	uri := "/intents/list"
+	if encoded := q.Encode(); encoded != "" {
+		uri += "?" + encoded
+	}
+
+	var out ListIntentsResponse
+
+	err := c.do(ctx, &request{
+		method: http.MethodGet,
+		uri:    uri,
 		result: &out,
 	})
 	if err != nil {

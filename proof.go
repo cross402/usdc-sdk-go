@@ -12,7 +12,8 @@ import (
 type SubmitProofResponse = ExecuteIntentResponse
 
 // SubmitProof submits settle_proof after the payer has completed X402 payment
-// on the source chain (POST {prefix}/intents/{intent_id}).
+// on the source chain (POST /api/intents/{intent_id}). This belongs to the
+// public /api flow only; v2 (auth) clients must use ExecuteIntent instead.
 func (c *Client) SubmitProof(ctx context.Context, intentID, settleProof string) (*SubmitProofResponse, error) {
 	if intentID == "" {
 		return nil, &ValidationError{Message: ErrEmptyIntentID.Error(), Err: ErrEmptyIntentID}
@@ -20,6 +21,10 @@ func (c *Client) SubmitProof(ctx context.Context, intentID, settleProof string) 
 
 	if settleProof == "" {
 		return nil, &ValidationError{Message: ErrEmptySettleProof.Error(), Err: ErrEmptySettleProof}
+	}
+
+	if c.authFunc != nil {
+		return nil, &ValidationError{Message: ErrSubmitProofNotAllowed.Error(), Err: ErrSubmitProofNotAllowed}
 	}
 
 	body, err := json.Marshal(map[string]string{"settle_proof": settleProof})
