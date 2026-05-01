@@ -163,8 +163,10 @@ client, err := pay.NewClient(baseURL,
 | `GetSupportedChains` | No | `GET /api/chains` | List payer and target chains the backend currently accepts |
 | `CreateIntent` | No | `POST {prefix}/intents` | Create a payment intent |
 | `ExecuteIntent` | Yes | `POST /v2/intents/{id}/execute` | Execute transfer with the Agent wallet (settles on the chosen target chain) |
-| `SubmitProof` | No | `POST {prefix}/intents/{id}` | Submit settle_proof after payer completes X402 payment |
-| `GetIntent` | No | `GET {prefix}/intents?intent_id=...` | Get intent status and receipt |
+| `SubmitProof` | No (public mode only) | `POST /api/intents/{id}` | Submit settle_proof after payer completes X402 payment |
+| `GetIntent` | No / Yes | `GET {prefix}/intents?intent_id=...` | Get intent status and receipt. With auth, only intents owned by the calling agent are returned (404 otherwise — see below) |
+| `ListIntents` | Yes | `GET /v2/intents/list` | Paginated list of intents owned by the calling agent (most recent first) |
+| `GetMe` | Yes | `GET /v2/me` | Returns the calling agent's identity (id, number, name, status, wallets) |
 
 ### GetSupportedChains
 
@@ -227,6 +229,42 @@ default:
     // still processing — poll again
 }
 ```
+
+> **v2 ownership policy:** when the client is configured with `WithBearerAuth`, `GetIntent` (and `ExecuteIntent`/`SubmitProof`) only return intents owned by the calling agent. Looking up an intent owned by a different agent — or one created via the public `/api` flow — returns **HTTP 404**, not 403, so callers can't probe foreign intent IDs.
+
+### ListIntents (paginated, owned by the calling agent)
+
+```go
+list, err := client.ListIntents(ctx, /*page*/ 1, /*pageSize*/ 20)
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, it := range list.Intents {
+    log.Printf("%s — %s (%s → %s)", it.IntentID, it.Status, it.PayerChain, it.TargetChain)
+}
+
+log.Printf("total=%d page=%d size=%d", list.Total, list.Page, list.PageSize)
+```
+
+- **Auth required.** Returns only intents owned by the calling agent.
+- `page` is 1-indexed; the server caps it at 1,000,000.
+- `pageSize` must be in `[1, 100]`. Pass `0` for either parameter to use the server defaults (page 1, 20 per page).
+- Out-of-range values (`pageSize > 100`, `page < 0`) are rejected by the SDK before reaching the API.
+
+### GetMe (authenticated identity)
+
+```go
+me, err := client.GetMe(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+log.Printf("agent %s (%s) status=%s", me.AgentID, me.AgentNumber, me.Status)
+log.Printf("base wallet=%s solana wallet=%s", me.WalletAddress, me.SolanaWalletAddress)
+```
+
+`GetMe` is served from middleware context — it does not hit the database — and is the cheapest way to verify an API key is live and bound to the agent the caller expects.
 
 ## Intent Lifecycle
 
@@ -376,19 +414,22 @@ if errors.Is(err, pay.ErrEmptyIntentID) {
 | `ErrEmptyBaseURL` | `baseURL` was empty in `NewClient` |
 | `ErrEmptyIntentID` | `intentID` was empty |
 | `ErrEmptySettleProof` | `settleProof` was empty in `SubmitProof` |
-| `ErrMissingAuth` | `ExecuteIntent` called without auth |
+| `ErrMissingAuth` | `ExecuteIntent`, `ListIntents`, or `GetMe` called without auth |
 | `ErrNilParams` | `CreateIntentRequest` was nil |
+| `ErrSubmitProofNotAllowed` | `SubmitProof` called with `WithBearerAuth` (use `ExecuteIntent` instead) |
+| `ErrInvalidPagination` | `page < 0`, `pageSize < 0`, or `pageSize > 100` in `ListIntents` |
 
 ### HTTP status codes
 
 | Status Code | Meaning |
 |---|---|
-| 400 | Bad request — invalid parameters, amount out of range, or malformed input |
+| 400 | Bad request — invalid parameters, amount out of range, malformed input, or out-of-range pagination (`page`, `page_size`) |
 | 401 | Unauthorized — missing or invalid credentials |
-| 403 | Forbidden — insufficient permissions for this operation |
-| 404 | Not found — intent does not exist |
+| 402 | Payment required — agent wallet has insufficient USDC to satisfy `ExecuteIntent` |
+| 403 | Forbidden — reserved for future use; v2 ownership rejection returns 404, not 403 |
+| 404 | Not found — intent does not exist *or* is owned by a different agent (uniform response prevents existence-leak probing) |
 | 429 | Rate limited — too many requests (60 req/min/IP typical) |
-| 503 | Service unavailable — temporary backend issue |
+| 503 | Service unavailable — temporary backend issue (e.g. proxy wallet temporarily out of funds) |
 
 ## Advanced
 
