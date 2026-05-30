@@ -31,6 +31,10 @@ type CreateIntentRequest struct {
 	// TargetChain is the settlement destination. Optional; defaults to "base"
 	// when empty. See GetSupportedChains for valid values.
 	TargetChain string `json:"target_chain,omitempty"`
+	// PayerAsset is the token the payer sends. Optional; defaults to AssetUSDC.
+	PayerAsset Asset `json:"payer_asset,omitempty"`
+	// TargetAsset is the token the recipient receives. Optional; defaults to AssetUSDC.
+	TargetAsset Asset `json:"target_asset,omitempty"`
 }
 
 // FeeBreakdown holds fee details from the API.
@@ -79,6 +83,8 @@ type CreateIntentResponse struct {
 	SourceRecipient     string               `json:"source_recipient,omitempty"`
 	PayerChain          string               `json:"payer_chain"`
 	TargetChain         string               `json:"target_chain"`
+	PayerAsset          Asset                `json:"payer_asset"`
+	TargetAsset         Asset                `json:"target_asset"`
 	PaymentRequirements *PaymentRequirements `json:"payment_requirements"`
 }
 
@@ -110,6 +116,8 @@ type GetIntentResponse struct {
 
 	PayerChain    string         `json:"payer_chain"`
 	TargetChain   string         `json:"target_chain"`
+	PayerAsset    Asset          `json:"payer_asset"`
+	TargetAsset   Asset          `json:"target_asset"`
 	ReceiverEmail string         `json:"receiver_email,omitempty"`
 	PayerWallet   string         `json:"payer_wallet,omitempty"`
 	ErrorMessage  string         `json:"error_message,omitempty"`
@@ -176,6 +184,8 @@ type IntentSummary struct {
 
 	PayerChain  string `json:"payer_chain"`
 	TargetChain string `json:"target_chain"`
+	PayerAsset  Asset  `json:"payer_asset"`
+	TargetAsset Asset  `json:"target_asset"`
 }
 
 // ListIntentsResponse is the response for GET /v2/intents/list.

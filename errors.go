@@ -6,13 +6,14 @@ import (
 )
 
 var (
-	ErrEmptyBaseURL          = errors.New("baseURL is required")
-	ErrEmptyIntentID         = errors.New("intent_id is required")
-	ErrEmptySettleProof      = errors.New("settle_proof is required")
-	ErrMissingAuth           = errors.New("auth option required")
-	ErrNilParams             = errors.New("params must not be nil")
-	ErrSubmitProofNotAllowed = errors.New("submit_proof is not supported when WithBearerAuth is set; use ExecuteIntent for v2")
-	ErrInvalidPagination     = errors.New("page must be >= 1 and page_size must be in [1,100]")
+	ErrEmptyBaseURL                    = errors.New("baseURL is required")
+	ErrEmptyIntentID                   = errors.New("intent_id is required")
+	ErrEmptySettleProof                = errors.New("settle_proof is required")
+	ErrMissingAuth                     = errors.New("auth option required")
+	ErrNilParams                       = errors.New("params must not be nil")
+	ErrSubmitProofNotAllowed           = errors.New("submit_proof is not supported when WithBearerAuth is set; use ExecuteIntent for v2")
+	ErrInvalidPagination               = errors.New("page must be >= 1 and page_size must be in [1,100]")
+	ErrExactInExactOutMutuallyExclusive = errors.New("from_amount and to_amount are mutually exclusive; set exactly one")
 )
 
 // UnexpectedError wraps unexpected errors (marshal, request creation).
