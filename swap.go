@@ -265,3 +265,57 @@ func (c *Client) GetSwapConnections(ctx context.Context, fromChain, toChain, fro
 
 	return out, nil
 }
+
+// ExecuteSwapRequest is the body for POST /api/me/swap/execute.
+// Requires Bearer auth (WithBearerAuth). The backend executes the swap on behalf
+// of the authenticated user without requiring the caller to hold a private key.
+type ExecuteSwapRequest struct {
+	Chain       string `json:"chain"`
+	FromToken   string `json:"from_token"`
+	ToToken     string `json:"to_token"`
+	FromAmount  uint64 `json:"from_amount"`
+	SlippageBps uint16 `json:"slippage_bps,omitempty"`
+	ToChain     string `json:"to_chain,omitempty"`
+}
+
+// ExecuteSwapResponse is the response for POST /api/me/swap/execute (200).
+type ExecuteSwapResponse struct {
+	TxHash          string `json:"tx_hash"`
+	Chain           string `json:"chain"`
+	FromToken       string `json:"from_token"`
+	ToToken         string `json:"to_token"`
+	FromAmount      string `json:"from_amount"`
+	EstimatedOutput string `json:"estimated_output"`
+}
+
+// ExecuteSwap submits a swap on behalf of the authenticated user without
+// requiring a private key (POST /api/me/swap/execute). Requires WithBearerAuth.
+func (c *Client) ExecuteSwap(ctx context.Context, req *ExecuteSwapRequest) (*ExecuteSwapResponse, error) {
+	if c.authFunc == nil {
+		return nil, &ValidationError{Message: ErrMissingAuth.Error(), Err: ErrMissingAuth}
+	}
+
+	if req == nil {
+		return nil, &ValidationError{Message: ErrNilParams.Error(), Err: ErrNilParams}
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, &UnexpectedError{Err: err}
+	}
+
+	var out ExecuteSwapResponse
+
+	err = c.do(ctx, &request{
+		method:      http.MethodPost,
+		uri:         "/api/me/swap/execute",
+		body:        bytes.NewReader(body),
+		result:      &out,
+		absoluteURI: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
